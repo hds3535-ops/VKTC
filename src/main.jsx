@@ -1,6 +1,6 @@
 import React,{useEffect,useMemo,useState}from"react";
 import{createRoot}from"react-dom/client";
-import{supabase}from"./lib/supabase";
+import{supabase,supabaseConfigStatus}from"./lib/supabase";
 import"./styles.css";
 
 const demo=[];
@@ -2089,7 +2089,9 @@ function App(){
 
     if(!supabase){
       setLoginBusy(false);
-      setLoginError("Supabase 연결 정보를 확인해주세요.");
+      setLoginError(
+        `Supabase 환경변수 감지 실패 · URL: ${supabaseConfigStatus.hasUrl?"감지됨":"없음"} · KEY: ${supabaseConfigStatus.hasKey?"감지됨":"없음"}${supabaseConfigStatus.keySource?` (${supabaseConfigStatus.keySource})`:""}`
+      );
       return;
     }
 
