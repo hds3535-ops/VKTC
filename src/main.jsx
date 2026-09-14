@@ -621,6 +621,14 @@ function writePublicCache(patch){
   }catch{}
 }
 
+function withTimeout(promise,ms,message){
+  let timer;
+  const timeout=new Promise((_,reject)=>{
+    timer=window.setTimeout(()=>reject(new Error(message)),ms);
+  });
+  return Promise.race([promise,timeout]).finally(()=>window.clearTimeout(timer));
+}
+
 function App(){
   const initialRoute=isReload()?{tab:"home",memberId:null}:readRoute();
   const initialPublicCache=readPublicCache();
@@ -971,9 +979,13 @@ function App(){
   },[]);
 
   useEffect(()=>{
-    if(!supabase||!authReady)return;
+    if(!supabase||!authReady||loginBusy)return;
     if(!user){
       setClubAdminAccess(null);
+      setAdminAccessReady(true);
+      return;
+    }
+    if(clubAdminAccess?.allowed){
       setAdminAccessReady(true);
       return;
     }
@@ -982,7 +994,7 @@ function App(){
       setClubAdminAccess(null);
       setAdminAccessReady(true);
     });
-  },[authReady,user?.id]);
+  },[authReady,user?.id,loginBusy]);
 
   useEffect(()=>{
     if(authReady&&adminAccessReady&&!isAdmin&&["members","settings"].includes(tab))navigate("home",null,true);
@@ -2071,48 +2083,74 @@ function App(){
 
   async function signIn(e){
     e.preventDefault();
-    setLoginBusy(true);setLoginError("");
-    const{data,error}=await supabase.auth.signInWithPassword({email:loginForm.email.trim(),password:loginForm.password});
-    if(error){
+    if(loginBusy)return;
+    setLoginBusy(true);
+    setLoginError("");
+
+    if(!supabase){
       setLoginBusy(false);
-      setLoginError("로그인 실패: 이메일 또는 비밀번호를 확인하세요.");
+      setLoginError("Supabase 연결 정보를 확인해주세요.");
       return;
     }
 
-    setUser(data?.user||data?.session?.user||null);
-    let access=null;
     try{
-      const{data:accessData,error:accessError}=await supabase.rpc("club_admin_access",{
-        p_club_id:CURRENT_CLUB_ID,
-        p_allow_bootstrap:true
-      });
+      const{data,error}=await withTimeout(
+        supabase.auth.signInWithPassword({
+          email:loginForm.email.trim(),
+          password:loginForm.password
+        }),
+        15000,
+        "로그인 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요."
+      );
+
+      if(error){
+        setLoginError("로그인 실패: 이메일 또는 비밀번호를 확인하세요.");
+        return;
+      }
+
+      const signedUser=data?.user||data?.session?.user||null;
+      if(!signedUser){
+        setLoginError("로그인 세션을 만들지 못했습니다. 다시 시도해주세요.");
+        return;
+      }
+
+      setUser(signedUser);
+      setAdminAccessReady(false);
+
+      const{data:accessData,error:accessError}=await withTimeout(
+        supabase.rpc("club_admin_access",{
+          p_club_id:CURRENT_CLUB_ID,
+          p_allow_bootstrap:false
+        }),
+        15000,
+        "VKTC 관리자 권한 확인 응답이 지연되고 있습니다."
+      );
+
       if(accessError)throw accessError;
-      access=accessData;
-      setClubAdminAccess(accessData||null);
+
+      const access=accessData||{allowed:false,system_admin:false};
+      if(!access.allowed){
+        try{
+          await withTimeout(supabase.auth.signOut(),5000,"");
+        }catch{}
+        setUser(null);
+        setClubAdminAccess(null);
+        setAdminAccessReady(true);
+        setLoginError("이 계정에는 VKTC 관리자 권한이 없습니다.");
+        return;
+      }
+
+      setClubAdminAccess(access);
       setAdminAccessReady(true);
+      setLoginOpen(false);
+      setLoginForm({email:"",password:""});
+      flash("VKTC 관리자 모드로 전환되었습니다.");
     }catch(err){
-      await supabase.auth.signOut();
-      setUser(null);
-      setClubAdminAccess(null);
       setAdminAccessReady(true);
+      setLoginError("관리자 로그인 확인 실패: "+(err?.message||"알 수 없는 오류"));
+    }finally{
       setLoginBusy(false);
-      setLoginError("관리자 권한 확인 실패: "+err.message);
-      return;
     }
-
-    if(!access?.allowed){
-      await supabase.auth.signOut();
-      setUser(null);
-      setClubAdminAccess(null);
-      setLoginBusy(false);
-      setLoginError("이 계정에는 VKTC 관리자 권한이 없습니다.");
-      return;
-    }
-
-    setLoginBusy(false);
-    setLoginOpen(false);
-    setLoginForm({email:"",password:""});
-    flash(access?.bootstrapped?"VKTC 관리자 권한이 연결되었습니다.":"관리자 모드로 전환되었습니다.");
   }
   async function signOut(){
     await supabase.auth.signOut();
