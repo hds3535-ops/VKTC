@@ -10653,3 +10653,32 @@ body:has(.vktcApp){
     width:100%;
   }
 }
+
+
+/* =========================================================
+   VKTC V11.63 — DESKTOP HOME HERO IMAGE FIX
+   Mobile layout is intentionally unchanged.
+   ========================================================= */
+@media(min-width:721px){
+  .vktcApp .mockHeroImage{
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    overflow:hidden !important;
+    background-color:#f3f9fd !important;
+    background-image:url('/vktc-logo.jpg') !important;
+    background-repeat:no-repeat !important;
+    background-position:center center !important;
+    background-size:contain !important;
+  }
+  .vktcApp .mockHeroImage img{
+    width:100% !important;
+    height:100% !important;
+    max-width:100% !important;
+    max-height:100% !important;
+    object-fit:contain !important;
+    object-position:center center !important;
+    padding:18px !important;
+    background:transparent !important;
+  }
+}
